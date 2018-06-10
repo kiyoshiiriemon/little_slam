@@ -1,0 +1,3 @@
+[submodule "src/little_slam"]
+	path = src/little_slam
+	url = https://github.com/furo-org/LittleSLAM.git
