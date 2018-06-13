@@ -1,7 +1,7 @@
 # little_slam
-ROS porting of [LittleSLAM](https://github.com/furo-org/LittleSLAM.git)
+[LittleSLAM](https://github.com/furo-org/LittleSLAM.git)をROSに移植したものです。
 
-# Install
+# インストール
 ```
 cd ~/catkin_ws/src
 git clone --recursive https://github.com/kiyoshiiriemon/little_slam
@@ -11,9 +11,16 @@ cd ~/catkin_ws/
 catkin_make
 ``` 
 
-# Run
+# 実行方法
 ```
 rosrun little_slam little_slam_node
 ```
-Little_slam requires Odometry ("odom") and LaserScan ("scan").
+入力トピックは
+- nav_msgs::Odometry ("odom")
+- sensor_msgs::LaserScan ("scan")
+
+出力は
+- sensor_msgs::PointCloud ("pcmap")
+
+です。
 
