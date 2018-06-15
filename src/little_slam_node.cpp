@@ -1,11 +1,15 @@
 #include <boost/circular_buffer.hpp>
+
 #include "ros/ros.h"
+
 #include "tf/tf.h"
+#include "tf/transform_listener.h"
+
 #include "pcl_ros/point_cloud.h"
 #include "sensor_msgs/LaserScan.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "nav_msgs/Odometry.h"
-#include "nav_msgs/OccupancyGrid.h"
+#include "nav_msgs/Path.h"
 #include "little_slam/framework/SlamFrontEnd.h"
 #include "little_slam/cui/FrameworkCustomizer.h"
 
@@ -13,34 +17,28 @@
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
-static Pose2D pose;
-SlamFrontEnd *sf;
-ros::Publisher pcmap_pub;
-nav_msgs::Odometry *p_odom = nullptr;
-boost::circular_buffer<
+//boost::circular_buffer<sensor_msgs::LaserScan> scan_buf(1000);
+boost::circular_buffer<Scan2D> scan_buf(1000);
+tf::TransformListener *listener;
 
-void odom_cb(const nav_msgs::Odometry &odom)
+static bool make_scan2d(Scan2D &out_scan, const sensor_msgs::LaserScan &scan)
 {
-    //ROS_INFO("odom received");
-    if (!p_odom) {
-        p_odom = new nav_msgs::Odometry();
+    tf::StampedTransform tr;
+    try{
+        //listener->waitForTransform("/odom", "/base_link", scan.header.stamp, ros::Duration(1.0));
+        listener->lookupTransform("/odom", "/base_link", scan.header.stamp, tr);
     }
-    *p_odom = odom;
-}
+    catch (tf::TransformException &ex) {
+      ROS_ERROR("%s",ex.what());
+      return false;
+    }
+    out_scan.pose.tx = tr.getOrigin().x();
+    out_scan.pose.ty = tr.getOrigin().y();
+    out_scan.pose.th = RAD2DEG(tf::getYaw(tr.getRotation()));
+    out_scan.pose.calRmat();
+    //std::cout << "scan pose: " << out_scan.pose.tx << " " << out_scan.pose.ty << " " << out_scan.pose.th << std::endl;
 
-void scan_cb(const sensor_msgs::LaserScan &scan)
-{
-    //ROS_INFO("scan received");
-    Scan2D scan2d;
-
-    if (!p_odom) return;
-    tf::Pose p;
-    tf::poseMsgToTF(p_odom->pose.pose, p);
-    scan2d.pose.tx = p_odom->pose.pose.position.x;
-    scan2d.pose.ty = p_odom->pose.pose.position.y;
-    scan2d.pose.th = tf::getYaw(p.getRotation()) / 3.1416 * 180.0;
-    scan2d.pose.calRmat();
-
+    out_scan.lps.clear();
     for(size_t i=0; i< scan.ranges.size(); ++i) {
         LPoint2D lp;
         double th = scan.angle_min + scan.angle_increment * i;
@@ -48,56 +46,78 @@ void scan_cb(const sensor_msgs::LaserScan &scan)
         if (scan.range_min < r && r < scan.range_max) {
             lp.x = r * cos(th);
             lp.y = r * sin(th);
-            scan2d.lps.push_back(lp);
+            out_scan.lps.push_back(lp);
         }
     }
-    std::cout << "odom :" << pose.tx << " " << pose.ty << std::endl;
-    sf->process(scan2d);
-    PointCloudMap *map = sf->getPointCloudMap();
-    double minx = 0, miny = 0, maxx = 0, maxy = 0;
 
-    PointCloud::Ptr msg(new PointCloud);
-    msg->header.frame_id = p_odom->header.frame_id;
-    msg->height = msg->width = 1;
-    for (auto lp: map->globalMap) {
-        msg->points.push_back(pcl::PointXYZ(lp.x, lp.y, 0));
-        if (minx > lp.x) {
-            minx = lp.x;
-        }
-        if (miny > lp.y) {
-            miny = lp.y;
-        }
-        if (maxx < lp.x) {
-            maxx = lp.x;
-        }
-        if (maxy < lp.y) {
-            maxy = lp.y;
-        }
+    return true;
+}
+
+static void scan_cb(const sensor_msgs::LaserScan &scan)
+{
+    //ROS_INFO("scan received");
+    Scan2D scan2d;
+    if (make_scan2d(scan2d, scan)) {
+        scan_buf.push_back(scan2d);
     }
-    msg->width = msg->points.size();
-    pcmap_pub.publish(msg);
 }
 
 int main(int argc, char **argv)
 {
+    ros::init(argc, argv, "little_slam");
+    ros::NodeHandle n;
 
-    sf = new SlamFrontEnd();
+    SlamFrontEnd *sf = new SlamFrontEnd();
     FrameworkCustomizer fc;
     fc.setSlamFrontEnd(sf);
     fc.makeFramework();
     //fc.customizeA();
     fc.customizeI();
 
-    ros::init(argc, argv, "little_slam");
-    ros::NodeHandle n;
+    ros::Subscriber laser_sub = n.subscribe("scan", 100, scan_cb);
+    ros::Publisher pcmap_pub = n.advertise<sensor_msgs::PointCloud2>("pcmap", 10);
+    ros::Publisher path_pub = n.advertise<nav_msgs::Path>("path", 10);
 
-    ros::Subscriber laser_sub = n.subscribe("scan", 10, scan_cb);
-    ros::Subscriber odom_sub = n.subscribe("odom", 10, odom_cb);
-    pcmap_pub = n.advertise<sensor_msgs::PointCloud2>("pcmap", 10);
+    listener = new tf::TransformListener();
 
-    ros::spin();
+    ros::Rate loop_rate(1000);
+    while(ros::ok())
+    {
+        ros::spinOnce();
+        loop_rate.sleep();
+
+        if (scan_buf.size() == 0) continue;
+
+        Scan2D scan2d = scan_buf.front();
+        scan_buf.pop_front();
+
+        if (true) {
+            sf->process(scan2d);
+            PointCloudMap *map = sf->getPointCloudMap();
+
+            PointCloud::Ptr msg(new PointCloud);
+            msg->header.frame_id = "map";
+            msg->height = msg->width = 1;
+            for (auto lp: map->globalMap) {
+                msg->points.push_back(pcl::PointXYZ(lp.x, lp.y, 0));
+            }
+            msg->width = msg->points.size();
+            pcmap_pub.publish(msg);
+
+            nav_msgs::Path path;
+            path.header.frame_id = "map";
+            for(auto p : map->poses) {
+                geometry_msgs::PoseStamped pose_s;
+                pose_s.pose.position.x = p.tx;
+                pose_s.pose.position.y = p.ty;
+                pose_s.pose.position.z = 0;
+                pose_s.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw(0, 0, DEG2RAD(p.th));
+                path.poses.push_back(pose_s);
+            }
+            path_pub.publish(path);
+        }
+    }
 
     return 0;
 }
-
 
