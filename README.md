@@ -19,7 +19,7 @@ rosrun little_slam little_slam_node _customize=I
 - sensor_msgs::LaserScan ("scan")
 
 出力は
-- sensor_msgs::PointCloud ("pcmap")
+- sensor_msgs::PointCloud2 ("pcmap")
 
 です。
 
