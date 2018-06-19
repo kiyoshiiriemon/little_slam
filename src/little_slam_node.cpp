@@ -71,8 +71,36 @@ int main(int argc, char **argv)
     FrameworkCustomizer fc;
     fc.setSlamFrontEnd(sf);
     fc.makeFramework();
-    //fc.customizeA();
-    fc.customizeI();
+
+    std::string cparam;
+    if (ros::param::has("~customize")) {
+        ros::param::get("~customize", cparam);
+        std::cerr << "Using customize " << cparam << std::endl;
+    } else {
+        cparam = "I";
+    }
+    if (cparam.compare("A") == 0) {
+        fc.customizeA();
+    } else if (cparam.compare("B") == 0) {
+        fc.customizeB();
+    } else if (cparam.compare("C") == 0) {
+        fc.customizeC();
+    } else if (cparam.compare("D") == 0) {
+        fc.customizeD();
+    } else if (cparam.compare("E") == 0) {
+        fc.customizeE();
+    } else if (cparam.compare("F") == 0) {
+        fc.customizeF();
+    } else if (cparam.compare("G") == 0) {
+        fc.customizeG();
+    } else if (cparam.compare("H") == 0) {
+        fc.customizeH();
+    } else if (cparam.compare("I") == 0) {
+        fc.customizeI();
+    } else {
+        std::cerr << "Invalid customize: " << cparam << std::endl;
+        exit(-1);
+    }
 
     ros::Subscriber laser_sub = n.subscribe("scan", 100, scan_cb);
     ros::Publisher pcmap_pub = n.advertise<sensor_msgs::PointCloud2>("pcmap", 10);
