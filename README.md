@@ -28,3 +28,10 @@ rosrun little_slam little_slam_node _customize=I
    - SLAM内部で使われている要素技術を切り替えて振る舞いの違いを観察することができます
    - AからIまであって、Iがループ解決を含むフル機能実装版です（デフォルト）
    
+# 制限事項
+ - 現在の実装ではロボットの中心にLidarが取り付けられているというのが前提です（座標変換が省略されています）
+    - 要望があればtfから変換を読めるように直します
+   
+# デモ
+[![](https://img.youtube.com/vi/imZT1B95MiQ/0.jpg)](https://www.youtube.com/watch?v=imZT1B95MiQ)
+
